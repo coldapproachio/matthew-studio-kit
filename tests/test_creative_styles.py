@@ -29,8 +29,8 @@ class DefaultStyleTests(unittest.TestCase):
     def test_blocks_are_seekable_compositions(self):
         # The old canned pack is gone from the default look.
         md = (STYLE / "STYLE.md").read_text()
-        self.assertIn("replica", md.lower())
-        self.assertIn("never use canned", md.lower())
+        self.assertIn("hyperframes library", md.lower())
+        self.assertIn("any library piece may be used", md.lower())
         for name in BLOCKS + ("kinetic",):
             self.assertFalse((STYLE / "templates" / name).exists())
         capsule = STYLE / "templates" / "capsule"
@@ -46,14 +46,12 @@ class DefaultStyleTests(unittest.TestCase):
         episode = (ROOT / "skills" / "episode" / "SKILL.md").read_text()
         readme = (ROOT / "README.md").read_text()
         for text in (agents, graphics, edit):
-            self.assertIn("replica", text.lower())
-        self.assertIn("quality gate", graphics.lower())
-        self.assertIn("do not auto-place", edit.lower())
-        self.assertIn("one default look", agents.lower())
+            self.assertIn("hyperframes library", text.lower())
+            self.assertIn("theme", text.lower())
+        self.assertIn("use the hyperframes library first", agents.lower())
+        self.assertIn("one theme per video", agents.lower())
         self.assertIn("preferences layer on top", agents.lower())
         self.assertIn("look good every time", agents.lower())
-        self.assertIn("find-in-page", graphics.lower())
-        self.assertIn("1.5s", graphics.lower())
         self.assertIn("accept_asr_mismatch", edit)
         self.assertIn("copy this reference video", style.lower())
         self.assertIn("preferences.json", style)
@@ -66,8 +64,8 @@ class DefaultStyleTests(unittest.TestCase):
         self.assertNotIn("go crazy", agents.lower())
         self.assertNotIn("premium-motion", agents.lower())
         self.assertIn("2.3.1", (ROOT / "CHANGELOG.md").read_text())
-        self.assertEqual(json.loads((ROOT / "plugin.json").read_text())["version"], "2.3.9")
-        self.assertEqual(json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text())["version"], "2.3.9")
+        self.assertEqual(json.loads((ROOT / "plugin.json").read_text())["version"], "2.4.0")
+        self.assertEqual(json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text())["version"], "2.4.0")
 
 
 

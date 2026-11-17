@@ -1,0 +1,3 @@
+/* On a vertical video: the line as big as the frame's width allows. */
+.tmx-text, .tmx-layer { font-size: var(--kit-line-fit, 10cqw) !important; }
+.tmx-text, .tmx-layer { font-weight: 800; letter-spacing: -0.02em; }

@@ -1,0 +1,2 @@
+/* On a vertical video: big wrapped type; the marker still lands on the emphasized word. */
+.mh-text { font-size: var(--kit-word-fit, 11cqw) !important; line-height: 1.02; }

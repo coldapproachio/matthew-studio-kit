@@ -68,16 +68,16 @@ class PlacementTests(unittest.TestCase):
         self.assertEqual(self.place(b), [])
         self.assertEqual(b[0]["box"], [40, 60, 1000, 700])
 
-    def test_canned_text_piece_is_flagged(self):
-        for name in ("accent-underline", "kinetic-label", "lower-third", "stat-count", "idea-swipe", "callout"):
-            with self.assertRaises(ValueError) as e:
-                gg.place_blocks([blk(name)], W, H)
-            self.assertIn("canned", str(e.exception))
-        gg.place_blocks([blk("accent-underline", canned_ok=True)], W, H)   # he asked for that exact piece
+    def test_any_library_piece_may_be_used(self):
+        # 2.4.0: no piece is refused by its name (titles, underlines, callouts, lower thirds are all library pieces)
+        for name in ("accent-underline", "kinetic-label", "lower-third", "stat-count", "hw-callout-circle", "titlecard-lockup"):
+            gg.place_blocks([blk(name)], W, H)
 
-    def test_replicas_are_not_canned(self):
-        for name in ("thread-message-stack", "google-search", "ai-chat-reveal", "macos-notification", "type-match-cut"):
-            self.assertFalse(gg.canned(name), name)
+    def test_a_type_piece_is_not_taken_for_her_texts(self):
+        for name in ("text-match-cut", "text-stagger", "headline-slam"):
+            self.assertFalse(gg.is_message({"name": name}), name)
+        for name in ("thread-message-stack", "chat-thread", "native-notification-pop"):
+            self.assertTrue(gg.is_message({"name": name}), name)
 
     def test_long_form_is_left_alone(self):
         b = [blk(box=[0, 0, 400, 200])]

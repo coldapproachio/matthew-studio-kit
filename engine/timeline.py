@@ -8,6 +8,8 @@ import hashlib, json, math, os, subprocess
 import quick_edit as qe
 import audio_clean
 import auto_sfx
+import swipe
+import theme
 import graphic_guard as gg
 
 KIT = qe.KIT
@@ -225,7 +227,8 @@ def build(edl_path, full=True):
         bx, by, bw, bh = crop_box(bw_, bh_, float(b.get("zoom", 1.0)), float(b.get("crop_x", 0.5)), 0.5, W / H)
         broll.append({"start": fc(float(b["at"])), "frames": f(float(b.get("dur", 1.5))), "file": key,
                       "src_frame": f(float(b.get("from", 0))), "crop": [bx, by, bw, bh], "src_w": bw_, "src_h": bh_,
-                      "layout": b.get("layout") or "full"})   # full | pip (his face in a corner) | split (b-roll top, face bottom)
+                      "layout": b.get("layout") or "full",    # full | pip (his face in a corner) | split (b-roll top, face bottom)
+                      **{k: b[k] for k in ("swipe", "color_match") if b.get(k) is not None}})
     sfx = []
     for s in edl.get("sfx") or []:
         fp = os.path.realpath(rel(s["file"])); key = media_key("sfx", fp)
@@ -235,20 +238,13 @@ def build(edl_path, full=True):
     # HyperFrames library blocks (hyperframes catalog): {name, at, dur, vars, box: [x, y, w, h] in output px}
     blocks = [{"name": b["name"], "start": fc(float(b["at"])), "frames": f(float(b.get("dur", 2.0))),
                "vars": b.get("vars") or {}, "box": b.get("box"), "data": b.get("data"), "fit": b.get("fit") or "native",
-               "canned_ok": bool(b.get("canned_ok")), "invented_ok": bool(b.get("invented_ok")),
-               **{k: b[k] for k in ("kind", "show", "panel_h", "tryout") if b.get(k) is not None}} for b in edl.get("blocks") or []]
+               "invented_ok": bool(b.get("invented_ok")),
+               **{k: b[k] for k in ("kind", "show", "panel_h", "tryout", "swipe", "replace", "page") if b.get(k) is not None}} for b in edl.get("blocks") or []]
 
-    # sound effects are always there: the kit adds a soft swipe on each move into and out of b-roll and a graphic that
-    # the plan left silent (engine/auto_sfx.py). Sounds already in the plan are kept as they are.
-    if auto_sfx.enabled(edl, st) and (broll or blocks):
-        swipe = auto_sfx.swipe_file(KIT)
-        if swipe:
-            key = media_key("sfx", swipe)
-            for t in auto_sfx.auto_times(broll, blocks, owords, [x["start"] / fps for x in sfx], fps, total):
-                media[key] = swipe
-                sfx.append({"start": fc(t), "file": key, "gain_db": auto_sfx.GAIN_DB, "auto": True})
-            sfx.sort(key=lambda x: x["start"])
     dlg = dialogue(edl, edl_dir, src, pieces, st, total)
+    th = theme.for_video(edl, qe.load_preferences())   # one theme for every graphic in this video
+    if th and not (edl.get("style") or {}).get("panel_color"):
+        st = dict(st); st["panel_color"] = th["bg"]
     st, layout_note = frame_layout(edl, st, blocks, ovs, gfx, W, H)
     if dropped:
         layout_note += "; the plan's style.frame_layout was ignored (set \"graphic_layout\" only when he asks for a layout on this video)"
@@ -275,6 +271,9 @@ def build(edl_path, full=True):
           # this video's own graphics (.work/<job>/graphics/<name>/), never saved into a style unless he asks
           "graphics_dirs": [os.path.join(edl_dir, "graphics")] + ([os.path.join(rel(edl["graphics_job"]), "graphics")] if edl.get("graphics_job") else []),
           "layout": layout, "dialogue": dlg, "camera": cam, "captions": caps, "overlays": ovs, "broll": broll, "sfx": sfx, "graphics": gfx, "blocks": blocks,
+          # the kit's own moves (engine/render_hf.py adds them once every graphic has its place): swipes and their sound
+          "auto": {"sfx": auto_sfx.enabled(edl, st), "swipe": swipe.enabled(edl, st)},
+          "theme": th,
           "caption_place": place + layout_note + "".join("; " + n for n in guard_notes),
           "words": [{"w": w["w"], "s": round(w["s"], 3), "e": round(w["e"], 3)} for w in owords]}
     return tl, media

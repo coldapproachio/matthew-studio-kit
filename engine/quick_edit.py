@@ -262,6 +262,8 @@ PREF_KEYS = {
     "center_y_frac", "uppercase", "one_line", "max_words", "max_chars", "min_chunk_s", "gap_break_s",
     "kw_sync_pop", "kw_pop_pct", "keyword_scale", "pop_scale", "pop_ms", "caption_template",
     "graphic_layout",   # "full": he always wants his face full frame, graphics as overlays or cutaways (never a panel)
+    "theme",            # one theme he always wants for his graphics (engine/theme.py); leave it off to take them in turn
+    "themes",           # his own list of themes to take in turn
 }
 
 

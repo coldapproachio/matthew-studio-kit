@@ -1,0 +1,13 @@
+{
+  "about": "Paper and cobalt blue ink with an ember second colour. Sharp, smart. (HyperFrames preset cobalt-grid.)",
+  "bg": "#F0EBDE",
+  "surface": "#E6E0CE",
+  "fg": "#1F2BE0",
+  "muted": "#5560E5",
+  "border": "#CFC8B4",
+  "accent": "#1F2BE0",
+  "accent2": "#E26B4A",
+  "over": "#F7F3E8",
+  "ink": "#1F2BE0",
+  "turn": 6
+}

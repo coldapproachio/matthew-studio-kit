@@ -143,15 +143,15 @@ class NoAutoSaveTests(unittest.TestCase):
         (k / "styles" / "default" / "style.json").write_text("{}")
         return k
 
-    def test_unsaved_graphic_in_my_styles_is_refused(self):
-        with tempfile.TemporaryDirectory() as d, patch.object(rh, "KIT", d):
+    def test_a_graphic_he_kept_is_reused(self):
+        # 2.4.0: a graphic in his style or on his shelf (library/graphics) is used again; its words are still checked
+        with tempfile.TemporaryDirectory() as d, patch.object(rh, "KIT", d), patch.object(rh, "SHELF", os.path.join(d, "library", "graphics")):
             t = Path(d) / "my-styles" / "default" / "templates" / "old-thread"
             t.mkdir(parents=True); (t / "old-thread.html").write_text("<div>Booked a call</div>")
-            with self.assertRaises(SystemExit) as e:
-                rh.own_block("default", "old-thread")
-            self.assertIn("older video", str(e.exception))
-            (t / "manifest.json").write_text(json.dumps({"saved": True}))
             self.assertEqual(rh.own_block("default", "old-thread")[1], "style")
+            s = Path(d) / "library" / "graphics" / "calendar"
+            s.mkdir(parents=True); (s / "calendar.html").write_text("<div></div>")
+            self.assertEqual(rh.own_block("default", "calendar")[1], "saved")
 
     def test_this_videos_graphic_comes_first(self):
         with tempfile.TemporaryDirectory() as d, patch.object(rh, "KIT", d):

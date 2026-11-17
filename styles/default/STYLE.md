@@ -1,10 +1,10 @@
 # default
 
-The kit's default look for every Short. Saved preferences (for example his red captions) only refine it; they never swap in a canned pack.
+The kit's default look for every Short. Saved preferences (for example his red captions) refine it.
 
 Vertical (9:16). While a graphic is on screen, a **top panel as tall as that graphic needs** (not a forced half screen; big, sharp, little empty space) with his talking head right below it, framed forehead to chin and never covered. The rest of the time (the hook, between graphics) his face is full frame. Captions sit in a dark capsule at **one fixed height** (`center_y_frac` 0.75) and one size for the whole video; a long caption breaks onto a second line instead of shrinking. If he asks for his face to stay full screen, the plan's `"graphic_layout": "full"` keeps it full frame and graphics pop in around him or cut away full screen (skills/graphics, "Layout"). The kit places every graphic; do not fight it in `index.html`.
 
-The motion graphics are not a template pack. They are high-fidelity replicas of real things he mentions, drawn as HyperFrames HTML/GSAP compositions, and they should look like a real screen — not a sticker, card, or typographic sting.
+The graphics come from the HyperFrames library (skills/graphics) and all wear the video's one theme (`bin/kit theme list`). A real app screen he mentions is built to look like the real app.
 
 ## Every video in this style
 
@@ -26,9 +26,9 @@ This is the default for a creative ask, not the only mode the kit has. A referen
 
 4. **Captions.** Automatic, capsule template, one fixed height and one size all video. Mixed case, a few words, never over his face and never over the graphic panel. Do not add a text card that repeats the caption.
 
-5. **What not to place by default.** Never use canned title cards, count-up stats, sticker callouts, lower thirds, or word swipes. Use a stock kit graphic or a library block only if it genuinely is the closest match to the real thing and it passes the quality gate. Never use a full-frame sting, swipe, or any graphic that covers his face.
+5. **Any library piece may be used** (titles, lists, counters, annotations, lower thirds, transitions), in the video's theme. Never cover his face.
 
-6. **Sound.** His voice at -14 LUFS, with sound effects on every Short: a soft swipe on each move into and out of B-roll and a graphic (the kit adds these), and a pop or tick as message bubbles appear. Only sounds from `library/sfx/`, under his voice, never on a word, never stacked. No music unless he asks.
+6. **Sound.** His voice at -14 LUFS, with sound effects on every video: b-roll and full-screen graphics swipe in and out with a whoosh (the kit adds these; small cards stay quiet), and a pop or tick as message bubbles appear. Only sounds from `library/sfx/`, under his voice, never stacked. No music unless he asks.
 
 7. **B-roll on most Shorts.** Add it without being asked where a clip from his library fits what he is saying, usually two to four moments, and fit it into this same layout — a full-screen cutaway or a top panel, never over his face. Skip it only when nothing fits.
 
@@ -38,3 +38,5 @@ A 16:9 video does not use this style full-frame. Save a new style with `"shape":
 (A dated line is added here each time he changes this style; undo reads the newest one.)
 2026-11-12: drop the canned five-graphic stack; real-world UI replicas in a reserved top panel; captions in a capsule on the seam
 2026-11-12: no invented chrome or meta labels in replicas; each graphic holds ~1.5s; believable charts; quality gate after every edit; b-roll only on request
+
+2026-11-17: any HyperFrames library piece may be used; one theme per video; b-roll and full-screen graphics swipe in with a whoosh, on Shorts and long videos

@@ -1,0 +1,3 @@
+/* On a vertical video: one word per line, as big as the longest word allows (the piece is built for one wide line). */
+.hs-headline { flex-direction: column; gap: 0.5cqh; white-space: normal; line-height: 0.94; letter-spacing: -0.02em;
+               font-size: var(--kit-word-fit, 12cqw) !important; }

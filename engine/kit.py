@@ -20,10 +20,13 @@ preview in HyperFrames Studio (he watches the whole edit before anything renders
   kit style undo [<name>]                      undo the newest saved change (the style changed last if no name); again = further back
   kit style sheet <reel.mp4>                   a contact sheet of a reference reel (.work/_refs/) to build a style from
   kit style import <old kit folder>            copy his saved styles from the old Matthew Edit Kit
-  kit graphics list | test <graphic>           the kit's own graphics (logo pop, picture card, text card)
-  kit graphics save <name> --job <job> [--style <s>] | --style <s>
-                                               only when he asks to keep a graphic in his style: copy this video's
-                                               .work/<job>/graphics/<name>/ into my-styles (or keep one already there)
+  kit graphics list | test <graphic>           the kit's own graphics and every graphic saved for reuse
+  kit graphics find <words>                    saved graphics that fit (look here before drawing a new one)
+  kit graphics use <name> --job <job> [--as <new name>]
+                                               reuse a saved graphic in this video: its design, this video's words
+  kit graphics save <name> --job <job> --about "<what it shows, when to use it>" [--tags a,b]
+                                               keep a graphic that came out well, so later videos reuse it
+                                               (library/graphics/). With --style <s>: keep it inside that style instead
   kit blocks search <words> | add <name> | test <name> [--job <job>]   HyperFrames library (about 450 blocks and components)
   kit library list [<words>] [--type t]        local files in library/ (b-roll, pictures, sound effects)
   kit library add <file> --type broll|picture|sfx --name <name> [--tags a,b]
@@ -480,6 +483,10 @@ def cmd_draft(a) -> int:
         "output": {"w": 1920, "h": 1080, "fps": 30} if (a.long or st.get("shape") == "16:9") else {"w": 1080, "h": 1920, "fps": 30},
         "blocks": [],
     }
+    import quick_edit as _qe, theme as _theme
+    th = _theme.next_in_turn(_qe.load_preferences())   # one theme for this video's graphics; the next video gets another
+    if th:
+        edl["theme"] = th
     import library
     # B-roll goes in on its own only when his style says so ("broll": {"auto": true}); otherwise he asks for it.
     if (st.get("broll") or {}).get("auto"):
@@ -1284,17 +1291,134 @@ def graphics_save(name: str, job: str | None, style: str) -> Path:
     return dst
 
 
+SHELF = KIT / "library" / "graphics"   # graphics kept for reuse (his own library: never touched by updates)
+
+
+def shelf() -> list[dict]:
+    """Every saved graphic: its manifest plus name and folder, newest first."""
+    out = []
+    for p in SHELF.glob("*/manifest.json"):
+        try:
+            m = json.load(open(p))
+        except ValueError:
+            continue
+        if (p.parent / f"{p.parent.name}.html").exists():
+            out.append(dict(m, name=p.parent.name, dir=p.parent))
+    return sorted(out, key=lambda m: m.get("saved_on", ""), reverse=True)
+
+
+def shelf_line(m: dict) -> str:
+    still = m["dir"] / "still.jpg"
+    return (f"{m['name']}: {m.get('about', '')}" + (f"  [{', '.join(m['tags'])}]" if m.get("tags") else "")
+            + (f"  ({m['w']}x{m['h']}, {m['dur']:g} s)" if m.get("w") else "")
+            + (f"  words on it: {' / '.join(m['words'][:4])}" if m.get("words") else "")
+            + (f"  still: {still.relative_to(KIT)}" if still.exists() else ""))
+
+
+def shelf_save(name: str, job_name: str | None, about: str | None, tags: str | None) -> Path:
+    """Keep a graphic that came out well, so later videos reuse it instead of redrawing it: this video's
+    .work/<job>/graphics/<name>/ goes to library/graphics/<name>/ with what it shows, its size, the words on it, and a
+    still from this video."""
+    if not job_name:
+        die("name the video it came from: kit graphics save <name> --job <job> --about \"...\"")
+    job = resolve_job(job_name)
+    src = job / "graphics" / name
+    if not (src / f"{name}.html").exists():
+        die(f"no {name}.html in {src.relative_to(KIT)}: only a graphic built for a video can be saved (library pieces are already reusable)")
+    if not about or len(about.split()) < 4:
+        die("say what it shows and when to use it, in a line: --about \"A calendar page flipping, for a line about waiting or time passing\"")
+    edl = json.load(open(job / "edl.json"))
+    use = next((b for b in edl.get("blocks") or [] if b.get("name") == name), None)
+    proj = KIT / ".work" / "_studio" / job.name
+    if use is None or not (proj / "index.html").exists():
+        die(f"{name} isn't in a previewed edit of {job.name} yet. Place it, run kit preview {job.name}, look at the still, "
+            "and save it only once it looks finished")
+    hfr = hfm()
+    dst = SHELF / name
+    shutil.rmtree(dst, ignore_errors=True)
+    shutil.copytree(src, dst)
+    meta = hfr.block_meta(str(dst / f"{name}.html"), name)
+    import graphic_guard as gg
+    m = {"kind": "graphic", "saved": True, "saved_on": dt.date.today().isoformat(), "from": job.name, "about": about.strip(),
+         "tags": [t.strip().lower() for t in (tags or "").split(",") if t.strip()],
+         "w": meta["w"], "h": meta["h"], "dur": meta["dur"], "words": gg.html_texts(open(dst / f"{name}.html").read())[:12]}
+    try:   # a picture of it from this video, so the next pick is by eye
+        shots = hfr.snapshot(str(proj), [float(use["at"]) + min(float(use.get("dur", 2.0)), meta["dur"]) * 0.6])
+        if shots:
+            subprocess.call(["ffmpeg", "-v", "error", "-y", "-i", shots[0], "-vf", "scale=-2:960", str(dst / "still.jpg")], env=env())
+    except Exception as e:
+        print(f"note: no still for {name} ({e})")
+    json.dump(m, open(dst / "manifest.json", "w"), indent=2)
+    return dst
+
+
+def shelf_use(name: str, job_name: str | None, as_name: str | None) -> Path:
+    """Reuse a saved graphic in this video: a copy in .work/<job>/graphics/<new name>/ that keeps the design and
+    motion and gets this video's words."""
+    src = SHELF / name
+    if not (src / f"{name}.html").exists():
+        die(f"no saved graphic {name!r}: kit graphics list")
+    if not job_name:
+        die("name the video: kit graphics use <name> --job <job>")
+    new = as_name or name
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", new):
+        die("the new name is lowercase letters, numbers and dashes, e.g. --as waiting-calendar")
+    dst = resolve_job(job_name) / "graphics" / new
+    if dst.exists():
+        die(f"{dst.relative_to(KIT)} already exists: pick another name with --as")
+    shutil.copytree(src, dst, ignore=shutil.ignore_patterns("manifest.json", "still.jpg"))
+    html_file = dst / f"{name}.html"
+    text = html_file.read_text()
+    if new != name:   # the composition's own id and timeline key follow the new name
+        text = re.sub(rf'(?<![\w-]){re.escape(name)}(?![\w-])', new, text)
+        html_file.unlink()
+    (dst / f"{new}.html").write_text(text)
+    return dst
+
+
 def cmd_graphics(a) -> int:
     if a.action == "save":
         if not a.name:
-            die("name the graphic, e.g. kit graphics save imessage-thread --job my-short")
-        dst = graphics_save(a.name, a.job, a.style or "default")
-        print(f"saved {a.name} in {dst.relative_to(KIT)}: later videos in this style can use it (with their own words / texts)")
+            die("name the graphic, e.g. kit graphics save waiting-calendar --job my-short --about \"...\"")
+        if a.style:   # he asked to keep it inside one style
+            dst = graphics_save(a.name, a.job, a.style)
+            print(f"saved {a.name} in {dst.relative_to(KIT)}: later videos in this style can use it (with their own words / texts)")
+            return 0
+        dst = shelf_save(a.name, a.job, a.about, a.tags)
+        print(f"saved {a.name} in {dst.relative_to(KIT)}. Later videos reuse it: kit graphics find <words>, then "
+              f"kit graphics use {a.name} --job <job>")
+        return 0
+    if a.action == "use":
+        if not a.name:
+            die("name the saved graphic, e.g. kit graphics use waiting-calendar --job my-short")
+        dst = shelf_use(a.name, a.job, a.as_name)
+        new = dst.name
+        print(f"copied {a.name} to {dst.relative_to(KIT)}. Keep its design and motion; change only the words in "
+              f"{new}.html to what he says in this video, then place it in the plan: {{\"name\": \"{new}\", \"at\": <s>, \"dur\": <s>}}")
+        return 0
+    if a.action == "find":
+        words = [w.lower() for w in ([a.name] if a.name else []) + list(a.more or [])]
+        if not words:
+            die("say what you need, e.g. kit graphics find calendar waiting")
+        scored = []
+        for m in shelf():
+            hay = " ".join([m["name"].replace("-", " "), m.get("about", ""), " ".join(m.get("tags") or []), " ".join(m.get("words") or [])]).lower()
+            n = sum(1 for w in words if w in hay)
+            if n:
+                scored.append((n, m))
+        for _, m in sorted(scored, key=lambda x: -x[0])[:8]:
+            print(shelf_line(m))
+        if not scored:
+            print(f"no saved graphic fits {' '.join(words)!r} ({len(shelf())} saved). Next: kit blocks search {' '.join(words)} (the HyperFrames library).")
         return 0
     if a.action == "list":
         for p in sorted(GRAPHICS.glob("*/manifest.json")):
             m = json.load(open(p))
             print(f"{p.parent.name}: {m.get('description', '')}  plan: {m.get('plan', '')}")
+        saved = shelf()
+        print(f"Saved for reuse ({len(saved)}):" if saved else "Saved for reuse: none yet (kit graphics save keeps a good one).")
+        for m in saved:
+            print("  " + shelf_line(m))
         print("More: about 450 HyperFrames library blocks and components (kit blocks search <words>).")
         return 0
     if not a.name:
@@ -1340,9 +1464,48 @@ def cmd_blocks(a) -> int:
     if getattr(a, "job", None):   # a graphic built for that video (.work/<job>/graphics/<name>/)
         extra["graphics_job"] = str(resolve_job(a.job))
     still = try_job(sample_job(f"block-{name}", a.clip, 4.0, extra), [1.0, 2.0, 3.2])
+    lib = hfr.library_file(os.path.join(hfr.BLOCKS, name), name)
+    if lib:   # what the piece takes, so his words can go in without opening its file
+        text = open(lib).read()
+        takes = hfr.declared_vars(text)
+        for v in takes:
+            opts = " | ".join(str(o.get("value")) for o in v.get("options") or [])
+            print(f"  vars.{v.get('id')}: {v.get('type')}" + (f" ({opts})" if opts else "") + f", sample {v.get('default')!r}")
+        if not takes:
+            import graphic_guard as gg
+            words = gg.html_texts(text)[:10]
+            if words:
+                print("  words typed into it (swap with \"replace\"): " + " / ".join(words))
     print(f"OK {name}: still {still}\nplace it with the plan's \"blocks\" (skills/graphics). The still shows the block's sample "
           "text; in the edit, give it his words with \"data\" / \"vars\" (text he never says stops the preview), or for a "
           "message graphic (iMessage, DM, notification) made-up realistic texts from her, never his script.")
+    return 0
+
+
+def cmd_theme(a) -> int:
+    """One theme per video: the colours every graphic in it uses (engine/theme.py)."""
+    import theme as tm
+    if a.action == "list":
+        for n in tm.names():
+            t = tm.load(n)
+            if t:
+                print(f"{n}: {t.get('about', '')}  page {t['bg']}, type {t['fg']}, accent {t['accent']}, second {t['accent2']}")
+        print("A new video takes the next one in turn. Change one video: kit theme set <theme> <job>. Always the same: \"theme\" in my-styles/preferences.json.")
+        return 0
+    t = tm.load(a.name or "")
+    if not t:
+        die(f"no theme {a.name!r}. Themes: {', '.join(tm.names())}")
+    if a.action == "show":
+        print(json.dumps(t, indent=2))
+        print("In a graphic you draw, use these by name, never a colour of your own: var(--bg) the page, var(--surface) a card, "
+              "var(--fg) type, var(--muted) quiet type, var(--border) lines, var(--accent) the one accent, var(--accent-2) the second colour.")
+        return 0
+    if not a.job:
+        die("name the video: kit theme set <theme> <job>")
+    p = resolve_job(a.job) / "edl.json"
+    edl = json.load(open(p)); edl["theme"] = a.name
+    json.dump(edl, open(p, "w"), indent=2)
+    print(f"{resolve_job(a.job).name} now uses the {a.name} theme. kit preview {resolve_job(a.job).name} to see it.")
     return 0
 
 
@@ -1403,11 +1566,13 @@ def main() -> int:
     tg = sp.add_parser("tighten"); tg.add_argument("jobs", nargs="+")
     q = sp.add_parser("qa"); q.add_argument("video"); q.add_argument("--job")
     cc = sp.add_parser("capcut"); cc.add_argument("job")
+    th = sp.add_parser("theme"); th.add_argument("action", choices=["list", "show", "set"]); th.add_argument("name", nargs="?"); th.add_argument("job", nargs="?")
     s = sp.add_parser("style"); s.add_argument("action", choices=["list", "show", "new", "set", "snapshot", "test", "versions", "restore", "undo", "preview", "import", "sheet", "push", "pull"])
     s.add_argument("name", nargs="?"); s.add_argument("pairs", nargs="*"); s.add_argument("--as", dest="as_name"); s.add_argument("--clip")
     s.add_argument("--from", dest="base")
-    g = sp.add_parser("graphics"); g.add_argument("action", choices=["list", "test", "save"]); g.add_argument("name", nargs="?"); g.add_argument("--clip")
-    g.add_argument("--job"); g.add_argument("--style")
+    g = sp.add_parser("graphics"); g.add_argument("action", choices=["list", "test", "save", "find", "use"]); g.add_argument("name", nargs="?")
+    g.add_argument("more", nargs="*"); g.add_argument("--clip")
+    g.add_argument("--job"); g.add_argument("--style"); g.add_argument("--about"); g.add_argument("--tags"); g.add_argument("--as", dest="as_name")
     b = sp.add_parser("blocks"); b.add_argument("action", choices=["search", "add", "test"]); b.add_argument("words", nargs="*"); b.add_argument("--clip"); b.add_argument("--style"); b.add_argument("--job")
     lb = sp.add_parser("library")
     lb.add_argument("action", choices=["list", "add", "sync", "connect", "setup", "detect", "plan", "index", "attach", "find", "override", "workflow", "sort", "upload"])
@@ -1437,7 +1602,7 @@ def main() -> int:
             deps.apply()
         deps.auto()
     return {"version": cmd_version, "doctor": cmd_doctor, "update": cmd_update, "prepare": cmd_prepare, "deps": cmd_deps, "transcribe": cmd_transcribe, "draft": cmd_draft, "tighten": cmd_tighten, "render": cmd_render, "preview": cmd_preview, "check": cmd_check, "qa": cmd_qa,
-            "style": cmd_style, "graphics": cmd_graphics, "blocks": cmd_blocks, "library": cmd_library, "capcut": cmd_capcut}[a.cmd](a)
+            "style": cmd_style, "graphics": cmd_graphics, "blocks": cmd_blocks, "library": cmd_library, "capcut": cmd_capcut, "theme": cmd_theme}[a.cmd](a)
 
 
 def logged_main() -> int:

@@ -8,7 +8,6 @@ Two layouts for a Short with graphics (the plan's "graphic_layout", else the sty
     full-screen cutaway when there's no room. Never on his face.
 Checks:
   - every block sits where the layout allows (place_blocks), at a size his phone can read
-  - text-only stock pieces (accent underline, kinetic type, lower thirds ...) are flagged as canned (canned)
   - every word a graphic shows has to come from what he says around that moment (unsupported_text), including words
     typed straight into a graphic's HTML (html_texts)
   - message graphics (iMessage threads, DMs, notifications) are the exception: their texts are made up, realistic
@@ -30,13 +29,10 @@ DEFAULT_FACE = {"top": 0.16, "bottom": 0.52}   # where a talking head usually is
 PANEL_LAYOUTS = {"split", "panel", "top-panel"}
 FULL_LAYOUTS = {"full", "full-face", "fullscreen", "cutaway", "overlay"}
 
-# text-only stock pieces: words on a coloured shape, not a replica of anything real
-CANNED = re.compile(r"(underline|kinetic|lower[-_]?third|title[-_]?card|stat[-_]?count|count[-_]?up|callout|idea[-_]?swipe|"
-                    r"word[-_]?(swipe|pop|stack)|text[-_]?(reveal|pop|slam|stack)|quote[-_]?card|sticker|headline|big[-_]?number)", re.I)
 # a message graphic: a phone conversation or notification from someone (her texts), not an AI chat or an app screen
 MESSAGE = re.compile(r"(i-?message|thread[-_]?message|message[-_]?(stack|thread|bubble)|text[-_]?(message|thread)|chat[-_]?message|"
                      r"(^|[-_])sms($|[-_])|(^|[-_])dms?($|[-_])|direct[-_]?message|notification|whatsapp|messenger|snapchat|"
-                     r"(^|[-_])texts?($|[-_])|lock[-_]?screen|"
+                     r"lock[-_]?screen|"   # not a bare "text": text-match-cut, text-stagger are type pieces, not her texts
                      r"(^|[-_])(chats?|messages?|threads?|convos?|conversations?|inbox)($|[-_])|hinge|tinder|bumble)", re.I)
 NOT_MESSAGE = re.compile(r"(^|[-_])(ai|gpt|chatgpt|claude|gemini|assistant|bot)($|[-_])", re.I)
 
@@ -62,10 +58,6 @@ def overlaps(a, b):
 def inside(box, area, tol=1):
     x, y, w, h = box; ax, ay, aw, ah = area
     return x >= ax - tol and y >= ay - tol and x + w <= ax + aw + tol and y + h <= ay + ah + tol
-
-
-def canned(name):
-    return bool(CANNED.search(name or ""))
 
 
 def is_message(block):
@@ -147,7 +139,8 @@ def place_blocks(blocks, W, H, layout="panel", cap_top=None, face=None, metas=No
     """Every block's box on a vertical Short, checked and fixed in place. Returns notes.
     panel: no box, or a box over his face, across the caption line, or too small, gets the panel sized to the block.
     full: "show": "cutaway" fills the frame; otherwise the overlay space around his face, or a cutaway when there's none.
-    A text-only canned piece stops the build unless the plan says he asked for it ("canned_ok": true)."""
+    Any library piece may be used (title cards, underlines, callouts, lower thirds included): what it looks like
+    is his call and the agent's, not the kit's."""
     notes = []
     if not is_vertical(W, H):
         return notes
@@ -155,10 +148,8 @@ def place_blocks(blocks, W, H, layout="panel", cap_top=None, face=None, metas=No
         cap_top = H / 2
     for i, b in enumerate(blocks):
         name = b.get("name", "")
-        if canned(name) and not b.get("canned_ok"):
-            raise ValueError(f"block {name!r} is a canned text graphic (words on a shape, not a replica of anything real). "
-                             "The default look shows a real-looking replica of what he talks about (skills/graphics). Pick or build a "
-                             "replica, or set \"canned_ok\": true on it only if he asked for this exact piece.")
+        if str(b.get("show") or "").lower() == "scene":   # a themed cut scene: the renderer lays it out (page, graphic, his card)
+            b["box"], b["show"] = [0, 0, W, H], "scene"; continue
         meta = (metas or {}).get(i)
         box = b.get("box")
         if box is not None:

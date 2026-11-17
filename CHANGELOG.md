@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.0
+
+- **Any HyperFrames library piece can be used.** The kit no longer refuses pieces by name (titles, underlines, callouts, lower thirds, counters). Three other things that stopped library pieces are gone too: a piece's settings (such as "fade" or "highlight") were checked as if they were words on screen; any piece with "text" in its name was treated as a text message from a girl; and a graphic left in his style by an older video was refused.
+- **One theme per video.** `bin/kit draft` gives each video a theme (`"theme"` in the plan) and every graphic in it wears those colours: library pieces pick them up by themselves. Six themes ship in `themes/`; the next video gets the next one in turn. `bin/kit theme list | show <name> | set <theme> <job>`. His own themes go in `my-styles/themes/`; `"theme"` in his preferences pins one.
+- **Copy a reference with library pieces.** The instructions now say: take the reference's colours as the video's theme, use the closest library piece for each thing it shows, and adjust those pieces instead of drawing new ones.
+- **His words into any piece.** `"replace": {"its sample line": "his words"}` on a block swaps text in a piece that has no settings. `bin/kit blocks test <name>` lists the settings and words a piece takes.
+- **Library type pieces fit a vertical video.** `graphics/_looks/vertical/<name>.css` restyles a piece for vertical only (big stacked words instead of one small line); four ship (`headline-slam`, `marker-highlight`, `text-match-cut`, `per-word-rise`).
+- **Keep what he likes.** `bin/kit graphics save <name> --job <job> --about "..."` keeps a graphic in `library/graphics/`; `bin/kit graphics find <words>` and `bin/kit graphics use <name> --job <job>` reuse it in later videos with that video's words.
+- **Swipes.** B-roll pushes in from the left and out the same way; a full-screen graphic slides in over him and off again. Each move gets a short whoosh (`assets/sfx/swipe-whoosh.wav`, his own copy in `library/sfx/` first), on Shorts and long videos. Small cards beside him and see-through graphics pop in quietly. `"swipe": false` or `"sfx_auto": false` only when he asks.
+- **A themed cut scene** (`"show": "scene"` on a block, only when asked for): the theme's page, the graphic on it, and his video in a card.
+- **Fixed: the quality check crashed on every video with b-roll**, so those renders always ended in FAIL. It now reads this kit's plan and treats b-roll and full-screen graphics as stretches where his face is not expected.
+
 ## 2.3.9
 
 - Sound effects are always there. The kit adds a soft swipe on each move into and out of B-roll and a graphic that the plan left silent, a beat before the cut and in the gap between words when there is one. Sounds already in the plan are kept. `"sfx_auto": false` turns it off when he asks.

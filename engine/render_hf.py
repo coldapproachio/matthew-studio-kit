@@ -15,6 +15,9 @@ import quick_edit as qe  # noqa: E402
 import timeline as tlm  # noqa: E402
 import audio_clean  # noqa: E402
 import graphic_guard as gg  # noqa: E402
+import auto_sfx  # noqa: E402
+import swipe  # noqa: E402
+import theme as themes  # noqa: E402
 
 KIT = qe.KIT
 ENGINE = os.path.join(KIT, "engine")
@@ -124,27 +127,20 @@ def voice_track(tl, out):
 
 
 # ---------------------------------------------------------------- library blocks
-SAVED = "saved"   # manifest.json key: a graphic he asked to keep in his style (bin/kit graphics save)
+SAVED = "saved"   # manifest.json key: a graphic kept for later videos (bin/kit graphics save)
+SHELF = os.path.join(KIT, "library", "graphics")   # his saved graphics: good ones are kept here and used again
 
 
 def own_block(style_name, name, graphics_dirs=()):
-    """A graphic built for this video (.work/<job>/graphics/<name>/<name>.html), else one he asked to keep in his style
-    (my-styles/<style>/templates/<name>/, marked saved), else the style's built-in one, else graphics/<name>/.
-    Returns (folder, where) or (None, None). A graphic an older video left in my-styles without being saved is refused:
-    a new Short never inherits an old video's graphic or its text."""
+    """A graphic built for this video (.work/<job>/graphics/<name>/<name>.html), else a saved one (library/graphics/<name>/,
+    kept by bin/kit graphics save), else one in his style (my-styles/<style>/templates/<name>/), else the style's
+    built-in one, else graphics/<name>/. Returns (folder, where) or (None, None). A saved graphic is reused as it is
+    drawn; the words it shows are still checked against what he says in this video (graphic_guard.check_text)."""
     for g in graphics_dirs or ():
         d = os.path.join(g, name)
         if os.path.exists(os.path.join(d, f"{name}.html")): return d, "video"
-    d = os.path.join(KIT, "my-styles", style_name, "templates", name)
-    if os.path.exists(os.path.join(d, f"{name}.html")):
-        try: saved = bool(json.load(open(os.path.join(d, "manifest.json"))).get(SAVED))
-        except (OSError, ValueError): saved = False
-        if not saved:
-            qe.die(f"my-styles/{style_name}/templates/{name}/ was left there by an older video, not saved by him, so it isn't used "
-                   f"(a new Short never inherits an old video's graphic or text). Build this video's own copy in "
-                   f".work/<job>/graphics/{name}/{name}.html with this video's words. Only if he asked to keep it in his style: "
-                   f"bin/kit graphics save {name} --style {style_name or 'default'}")
-        return d, "style"
+    for d, where in ((os.path.join(SHELF, name), "saved"), (os.path.join(KIT, "my-styles", style_name, "templates", name), "style")):
+        if os.path.exists(os.path.join(d, f"{name}.html")): return d, where
     for d, where in ((os.path.join(KIT, "styles", style_name, "templates", name), "style"), (os.path.join(KIT, "graphics", name), "kit")):
         if os.path.exists(os.path.join(d, f"{name}.html")): return d, where
     return None, None
@@ -210,17 +206,30 @@ def block_meta(path, name):
 BLUR = re.compile(r"(-webkit-)?backdrop-filter\s*:[^;}]*;?|filter\s*:\s*blur\([^)]*\)[^;}]*;?", re.I)
 
 
-def real_look(html_text, name):
+def real_look(html_text, name, vertical=False):
     """Library blocks are demos: soft blurred backdrops, see-through cards. On his video a graphic is a sharp, solid
-    replica, so blur filters are stripped and the kit's real-look restyle for that block (graphics/_looks/<name>.css),
-    if there is one, is added last inside the block's own <style>."""
+    replica, so blur filters are stripped and the kit's restyle for that block (graphics/_looks/<name>.css), if there
+    is one, is added last inside the block's own <style>. Most library type pieces are built for a wide frame and keep
+    their words on one small line, so a vertical video also gets graphics/_looks/vertical/<name>.css: the same piece
+    with big stacked type."""
     out = BLUR.sub("", html_text)
-    look = os.path.join(LOOKS, f"{name}.css")
-    if os.path.exists(look):
-        css = open(look).read()
-        i = out.rfind("</style>")
-        out = out[:i] + "\n/* kit real look: graphics/_looks/" + name + ".css */\n" + css + "\n" + out[i:] if i >= 0 else out
+    for look in [os.path.join(LOOKS, f"{name}.css")] + ([os.path.join(LOOKS, "vertical", f"{name}.css")] if vertical else []):
+        if os.path.exists(look):
+            css = open(look).read()
+            i = out.rfind("</style>")
+            out = out[:i] + "\n/* kit real look: " + os.path.relpath(look, KIT) + " */\n" + css + "\n" + out[i:] if i >= 0 else out
     return out
+
+
+def fit_sheet(shown):
+    """Type sizes that fit this graphic's own words, for the vertical looks to use: --kit-word-fit (one word per line:
+    as big as the longest word allows) and --kit-line-fit (a whole line across the frame). In cqw, the piece's width."""
+    lines = [str(v) for v in shown.values() if isinstance(v, str) and v.strip()]
+    if not lines: return ""
+    word = max((len(w) for l in lines for w in l.split()), default=6)
+    line = max(len(l) for l in lines)
+    wf = max(6.0, min(13.5, 88 / (word * 0.62))); lf = max(5.0, min(13.5, 88 / (line * 0.56)))
+    return f"<style data-kit-fit>[data-composition-id]{{--kit-word-fit:{wf:.2f}cqw;--kit-line-fit:{lf:.2f}cqw}}</style>"
 
 
 def reflow(html_text, w0, h0, w, h):
@@ -233,23 +242,51 @@ def reflow(html_text, w0, h0, w, h):
     return out
 
 
-def prepare_block(b, i, proj, meta):
-    """This mount's own copy of the block, next to the installed one: the plan's data in place of the block's sample
-    content, the real-look restyle, and (fit "native", the default) the canvas reflowed to the box. Returns (meta for
-    this mount, the texts it shows)."""
+def declared_vars(html_text):
+    """The variables a library piece declares ([{id, type, default, ...}]), or [] when it has none."""
+    m = re.search(r"data-composition-variables='(\[.*?\])'", html_text, re.S)
+    if not m: return []
+    try: return [v for v in json.loads(m.group(1)) if isinstance(v, dict)]
+    except ValueError: return []
+
+
+def prepare_block(b, i, proj, meta, theme=None, vertical=False):
+    """This mount's own copy of the block, next to the installed one: the plan's data and words in place of the block's
+    sample content, this video's theme, the real-look restyle, and (fit "native", the default) the canvas reflowed to
+    the box. Returns (meta for this mount, the texts it shows)."""
     src_rel = meta.get("src") or f"compositions/{b['name']}.html"
     src = open(os.path.join(proj, src_rel)).read()
+    # his words in a piece that has no variables: {"replace": {"its sample line": "what he says"}} swaps text as drawn
+    for old, new in (b.get("replace") or {}).items():
+        hit = next((o for o in (old, html.escape(old, quote=False), html.escape(old)) if o in src), None)
+        if hit is None:
+            qe.die(f"block {b['name']}: it doesn't show \"{old}\", so there is nothing to replace. kit blocks test {b['name']} lists the words it shows")
+        src = src.replace(hit, html.escape(str(new), quote=False))
+    if theme:   # every graphic in a video wears the same colours (engine/theme.py)
+        extra = themes.colour_vars(declared_vars(src), b.get("vars"), theme)
+        if extra: b["vars"] = {**extra, **(b.get("vars") or {})}
+        sheet = f"<style data-kit-theme=\"{theme['name']}\">\n{themes.css(theme)}\n</style>"
+        if "</head>" in src: src = src.replace("</head>", sheet + "\n</head>", 1)
+        tm = re.search(r"<template[^>]*>", src)   # a component is mounted from its <template>: the sheet has to be in it
+        if tm: src = src[:tm.end()] + "\n" + sheet + src[tm.end():]
+        elif "</head>" not in src: src = sheet + "\n" + src
     data = gg.primitive_data(src)
     if b.get("data") is not None:
         if data is None and "data-hf-primitive-data" not in src:
             qe.die(f"block {b['name']} has no data to replace; set its text with vars, or build a replica")
         data = b["data"] if not isinstance(b["data"], dict) or not isinstance(data, dict) else {**data, **b["data"]}
         src = gg.set_primitive_data(src, data)
-    texts = gg.strings_in(data) + gg.strings_in(b.get("vars") or {})
+    # words a variable puts on screen are checked; a setting (an option such as "fade", a number, a colour) is not text
+    kinds = {str(v.get("id") or v.get("name")): v.get("type") for v in declared_vars(src)}
+    shown = {k: v for k, v in (b.get("vars") or {}).items() if kinds.get(k, "string") == "string"}
+    texts = gg.strings_in(data) + gg.strings_in(shown)
     b["message"] = gg.is_message(dict(b, data=data if b.get("data") is None else b["data"]))
     # a message graphic from the library or a saved style still showing the texts it came with: an old video's or a demo's
     b["needs_data"] = b["message"] and meta.get("origin") != "video" and b.get("data") is None and not b.get("vars")
-    src = real_look(src, b["name"])
+    src = real_look(src, b["name"], vertical)
+    if vertical and shown:
+        tm = re.search(r"<template[^>]*>", src)
+        src = src[:tm.end()] + "\n" + fit_sheet(shown) + src[tm.end():] if tm else src.replace("</head>", fit_sheet(shown) + "\n</head>", 1)
     b["html_texts"] = gg.html_texts(src)   # words typed straight into the graphic are checked too
     m = dict(meta)
     x, y, w, h = b["box"]
@@ -336,10 +373,10 @@ def write_html(tl, blocks_meta):
     sc = min(W, H) / 1080          # graphics are designed 1080 px wide
     js, body, top, caps_html = [], [], [], []   # captions go last: always on top of b-roll, pictures and blocks
 
-    def framed(id_, src, start, n, src_frame, crop, sw, sh, track):
+    def framed(id_, src, start, n, src_frame, crop, sw, sh, track, extra=""):
         x, y, w, _ = crop; k = W / w
         return (f'<video id="{id_}" src="assets/{src}" muted playsinline {span(start, n)} data-media-start="{s(src_frame)}" '
-                f'data-track-index="{track}" style="position:absolute;left:{-x * k:.2f}px;top:{-y * k:.2f}px;'
+                f'data-track-index="{track}"{extra} style="position:absolute;left:{-x * k:.2f}px;top:{-y * k:.2f}px;'
                 f'width:{sw * k:.2f}px;height:{sh * k:.2f}px;max-width:none"></video>')
 
     def pop(sel, start, curve):
@@ -347,9 +384,11 @@ def write_html(tl, blocks_meta):
             js.append(f'tl.set("{sel}", {{scale: {v}, opacity: {1 if v > 0 else 0}}}, {jt(start + f)});')
 
     # camera: muted pieces of his clip, each cropped to its output-shaped window (punch-ins are tighter windows), full frame.
+    nl2 = "\n      "
+    base = []   # his picture (camera, and the panel layout over it): one layer, so a swipe slides all of it at once
     for i, p in enumerate(tl["camera"]):
         n = p["frames"] + (1 if i < len(tl["camera"]) - 1 else 0)   # one frame under the next piece: never a gap
-        body.append(framed(f"cam{i}", p["src"], p["start"], n, p["src_frame"], p["crop"], tl["src_w"], tl["src_h"], 1))
+        base.append(framed(f"cam{i}", p["src"], p["start"], n, p["src_frame"], p["crop"], tl["src_w"], tl["src_h"], 1))
         if p.get("drift"):
             x, y, w, h = p["crop"]; k = W / w
             js.append(f'tl.fromTo("#cam{i}", {{scale: 1}}, {{scale: {1 + p["drift"]}, duration: {p["frames"] / fps:.4f}, ease: "none", '
@@ -363,21 +402,45 @@ def write_html(tl, blocks_meta):
     windows = panel_windows(tl, lens) if frame_split else []
     for wi, (w0, w1, ph) in enumerate(windows):
         head = (f"left:0;top:{ph}px;width:{W}px;height:{H - ph}px;object-fit:cover;object-position:50% {face_pos(tl, ph):.1f}%")
-        body.append(f'<div id="panel{wi}" class="clip" {span(w0, w1 - w0)} data-track-index="20" style="position:absolute;left:0;top:0;'
+        base.append(f'<div id="panel{wi}" class="clip" {span(w0, w1 - w0)} data-track-index="20" style="position:absolute;left:0;top:0;'
                     f'width:{W}px;height:{ph}px;background:{panel_color}"></div>')
         pieces = [p for p in tl["camera"] if p["start"] < w1 and p["start"] + p["frames"] > w0]
         for j, p in enumerate(pieces):
             a0 = max(p["start"], w0); a1 = min(p["start"] + p["frames"] + (1 if j < len(pieces) - 1 else 0), w1)
-            body.append(f'<video id="head{wi}_{j}" src="assets/{p["src"]}" muted playsinline {span(a0, a1 - a0)} '
+            base.append(f'<video id="head{wi}_{j}" src="assets/{p["src"]}" muted playsinline {span(a0, a1 - a0)} '
                         f'data-media-start="{s(p["src_frame"] + a0 - p["start"])}" data-track-index="{21 + j % 2}" '
                         f'style="position:absolute;{head}"></video>')
+
+    body.append('<div id="base" style="position:absolute;inset:0;overflow:hidden">' + "\n      ".join(base) + "</div>")
+
+    # swipes (engine/swipe.py): b-roll and full-screen graphics push in from the left and leave the same way. One
+    # position per frame, so every frame of the move is exact. A scene that follows another starts its push early,
+    # over the last frames of the one before.
+    moves = tl.get("moves") or []
+    early = {m["into"]: m["frames"] for m in moves if m.get("early")}
+    pushed = {m[k] for m in moves if m["frames"] for k in ("into", "out")}
+    # what slides is a frame-sized layer around the picture (a cropped clip is wider than the frame, so the clip itself can't)
+    sel = lambda ref: "#base" if ref == "base" else ("#push" + ref[3:] if ref.startswith("blk") else "#slide" + ref[5:])
+    layer = lambda id_, inner: f'<div id="{id_}" style="position:absolute;inset:0;overflow:hidden">{inner}</div>'
+    for m in moves:
+        # b-roll pushes: it comes in as his picture goes out. A graphic slides over what is there and off it again (it
+        # may be see-through, so his picture stays put underneath).
+        gin, gout = m["into"].startswith("blk"), m["out"].startswith("blk")
+        parts = [(sel(m["into"]), 1)] if gin else [(sel(m["out"]), 2)] if gout and m["into"] == "base" else [(sel(m["into"]), 1), (sel(m["out"]), 2)]
+        for step in swipe.steps(m, W):
+            js.append(" ".join(f'tl.set("{q}", {{x: {step[k]}}}, {jt(step[0])});' for q, k in parts))
+        if m["frames"]:
+            js.append(" ".join(f'tl.set("{q}", {{x: 0}}, {jt(m["at"] + m["frames"])});' for q, _ in parts))
 
     # b-roll: muted, over the camera. full = the whole frame (cropped to the output shape); pip = full frame with his face
     # in a corner box (screen recordings on long-form); split = b-roll on top, his face on the bottom half (vertical)
     for i, b in enumerate(tl["broll"]):
         lay = b.get("layout", "full")
         if lay == "full":
-            body.append(framed(f"broll{i}", b["file"], b["start"], b["frames"], b["src_frame"], b["crop"], b["src_w"], b["src_h"], 4))
+            e = early.get(f"broll{i}", 0)
+            clip = framed(f"broll{i}", b["file"], b["start"] - e, b["frames"] + e, max(0, b["src_frame"] - e), b["crop"],
+                          b["src_w"], b["src_h"], 4)
+            body.append(layer(f"slide{i}", clip) if f"broll{i}" in pushed else clip)
             continue
         bh = H // 2 if lay == "split" else H
         body.append(f'<video id="broll{i}" src="assets/{b["file"]}" muted playsinline {span(b["start"], b["frames"])} '
@@ -461,7 +524,8 @@ def write_html(tl, blocks_meta):
     # up, and a block prepared at the box size (prepare_block) mounts at scale 1: sharp text, no soft upscaled card.
     for i, b in enumerate(tl.get("blocks") or []):
         m = blocks_meta.get(i) or blocks_meta[b["name"]]
-        n = min(b["frames"], int(m["dur"] * fps))
+        e = early.get(f"blk{i}", 0)
+        n = min(b["frames"] + e, int(m["dur"] * fps))
         x, y, w, h = b.get("box") or [0, 0, W, H]
         if m.get("fluid"):   # a component fills the box it's given, at full resolution
             mw, mh, k = round(w), round(h), 1.0
@@ -474,7 +538,7 @@ def write_html(tl, blocks_meta):
         radius = 0 if show in ("panel", "cutaway") or not show and frame_split else (round(28 / k) if k < 1 else 28)
         lift = ";box-shadow:0 18px 50px rgba(0,0,0,0.45)" if show == "overlay" else ""
         tag = (f'<div id="blk{i}" data-composition-id="{m["id"]}" data-composition-src="{m.get("src") or f"compositions/{b['name']}.html"}" '
-               f'{span(b["start"], n)} data-track-index="{7 + i}" data-width="{mw}" data-height="{mh}"{vv}'
+               f'{span(b["start"] - e, n)} data-track-index="{7 + i}" data-width="{mw}" data-height="{mh}"{vv}'
                f'{f" data-kit-show={chr(34)}{show}{chr(34)}" if show else ""} '
                f'style="position:absolute;left:{x:.1f}px;top:{y:.1f}px;width:{mw}px;height:{mh}px;'
                f'transform-origin:0 0;transform:scale({k:.5f});overflow:hidden;border-radius:{radius}px{lift}"></div>')
@@ -482,6 +546,22 @@ def write_html(tl, blocks_meta):
             cx, cy = x + mw * k / 2, y + mh * k / 2
             body.append(f'<div id="pop{i}" style="position:absolute;inset:0;transform-origin:{cx:.1f}px {cy:.1f}px">{tag}</div>')
             js.append(f'tl.fromTo("#pop{i}", {{scale: 0.9, opacity: 0}}, {{scale: 1, opacity: 1, duration: 0.2, ease: "power2.out"}}, {jt(b["start"])});')
+        elif b.get("page"):   # a themed cut scene: the theme's page, the graphic, and his video in a card
+            th = tl["theme"]; fx, fy, fw, fh = scene_boxes(W, H)[1]
+            f_ = (tl.get("style") or {}).get("face_focus_y") or {}
+            fpos = max(0.0, min(100.0, ((f_.get("top", 0.2) + f_.get("bottom", 0.45)) / 2 * 100 - 18) / 0.64))
+            card = (f"position:absolute;left:{fx}px;top:{fy}px;width:{fw}px;height:{fh}px;object-fit:cover;object-position:50% {fpos:.0f}%;"
+                    f"border-radius:{round(W * 0.03)}px;box-shadow:0 0 0 {max(2, round(W * 0.004))}px {th['border']}, 0 18px 50px rgba(0,0,0,0.35)")
+            inner = [f'<div id="page{i}" class="clip" {span(b["start"] - e, n)} data-track-index="20" style="position:absolute;inset:0;background:{th["bg"]}"></div>',
+                     tag.replace('data-kit-show="cutaway"', 'data-kit-show="scene"')]
+            for j, p in enumerate(tl["camera"]):   # his video during the scene: the same camera pieces, in the card
+                a0, a1 = max(p["start"], b["start"] - e), min(p["start"] + p["frames"], b["start"] - e + n)
+                if a1 <= a0: continue
+                inner.append(f'<video id="scene{i}_{j}" src="assets/{p["src"]}" muted playsinline {span(a0, a1 - a0)} '
+                             f'data-media-start="{s(p["src_frame"] + a0 - p["start"])}" data-track-index="4" style="{card}"></video>')
+            body.append(layer(f"push{i}", nl2.join(inner)))
+        elif f"blk{i}" in pushed:   # a full-screen graphic that swipes: its own layer to slide
+            body.append(layer(f"push{i}", tag))
         else:
             body.append(tag)
 
@@ -548,6 +628,38 @@ def write_html(tl, blocks_meta):
 """
 
 
+def scene_boxes(W, H):
+    """A themed cut scene on a vertical video: (where the graphic sits, where his video card sits), in output px. The top
+    fifth stays clear for the app's own buttons; his card sits under the graphic, with the captions across it."""
+    gx, gy, gw, gh = round(W * 0.05), round(H * 0.205), round(W * 0.90), round(H * 0.27)
+    ch = round(H * 0.30); cw = round(ch * 0.8)
+    return [gx, gy, gw, gh], [round((W - cw) / 2), round(H * 0.50), cw, ch]
+
+
+def add_moves(tl, blocks_meta, assets):
+    """The kit's own moves, planned once every graphic has its place: b-roll and full-screen graphics swipe in and out
+    (engine/swipe.py), and each move the plan left silent gets the swipe whoosh (engine/auto_sfx.py). Small cards
+    beside him are not moves: no swipe, no sound."""
+    fps, auto = tl["fps"], tl.get("auto") or {}
+    blocks = tl.get("blocks") or []
+    lens = [min(b["frames"], int(blocks_meta[i]["dur"] * fps)) for i, b in enumerate(blocks)]
+    moves = swipe.plan(swipe.scenes(tl, lens, pushes=auto.get("swipe", True)), fps, tl["frames"])
+    for m in moves:   # a graphic too short to start early is cut in instead
+        if m.get("early") and m["into"].startswith("blk"):
+            i = int(m["into"][3:])
+            if int(blocks_meta[i]["dur"] * fps) < blocks[i]["frames"] + m["frames"]:
+                m.update(at=m["at"] + m["frames"], frames=0); m.pop("early"); m["hit"] = m["at"]
+    tl["moves"] = moves
+    f = auto_sfx.swipe_file(KIT) if auto.get("sfx", True) and moves else None
+    if f:
+        key, meas = tlm.media_key("sfx", f), auto_sfx.measure(f, os.path.join(KIT, ".cache", "sfx"))
+        taken = [x["start"] / fps for x in tl["sfx"]]
+        for t in auto_sfx.auto_times([m["hit"] / fps for m in moves], tl.get("words") or [], taken, meas["peak_s"], meas.get("dur_s")):
+            tl["sfx"].append({"start": int(math.ceil(t * fps - 1e-6)), "file": key, "gain_db": auto_sfx.gain_db(meas["peak_db"]), "auto": True})
+        _link(f, os.path.join(assets, key))
+        tl["sfx"].sort(key=lambda x: x["start"])
+
+
 def build(edl_path, force=False):
     """Write (or keep) the HyperFrames project for this job. Returns (project dir, status line)."""
     edl_path = os.path.abspath(edl_path)
@@ -561,9 +673,6 @@ def build(edl_path, force=False):
     a = os.path.join(proj, "assets"); os.makedirs(a, exist_ok=True)
     for key, src in media.items(): _link(src, os.path.join(a, key))
     _link(GSAP, os.path.join(a, "gsap.min.js"))
-    for x in tl["sfx"]:
-        x["dur_s"] = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
-                                           media[x["file"]]], capture_output=True, text=True).stdout.strip() or 0.5)
     gd = tl.get("graphics_dirs") or []
     installed = {b["name"]: install_block(b["name"], proj, tl.get("style_name") or "", gd) for b in tl.get("blocks") or []}
     blocks_meta, W, H = {}, tl["width"], tl["height"]
@@ -578,13 +687,29 @@ def build(edl_path, force=False):
         tl["caption_place"] = tl.get("caption_place", "") + "".join("; " + n for n in notes)
     for i, b in enumerate(tl.get("blocks") or []):
         if not b.get("box"): b["box"] = [0, 0, W, H]
-        blocks_meta[i], b["texts"] = prepare_block(b, i, proj, installed[b["name"]])
+        ins = installed[b["name"]]
+        raw = open(os.path.join(proj, ins.get("src") or f"compositions/{b['name']}.html")).read()
+        # a themed cut scene, only when the plan asks for one ("show": "scene"): the theme's page behind the graphic and
+        # his video in a card. The kit never picks this layout by itself.
+        if b.get("show") == "scene":
+            b["show"] = "cutaway"   # without a theme (an older plan), or on a wide video, it is a plain full-screen graphic
+            if tl.get("theme") and gg.is_vertical(W, H):
+                b["page"], b["box"] = True, scene_boxes(W, H)[0]
+            else:
+                b["box"] = [0, 0, W, H]
+        blocks_meta[i], b["texts"] = prepare_block(b, i, proj, ins, tl.get("theme"), gg.is_vertical(W, H))
+        b["solid"] = bool(b.get("page")) or swipe.solid_cover(open(os.path.join(proj, blocks_meta[i]["src"])).read(), blocks_meta[i]["w"], blocks_meta[i]["h"])
     bad = gg.check_text(tl.get("blocks") or [], tl.get("graphics") or [], tl.get("words") or [], tl["fps"])
     if bad:
         qe.die("on-screen text problems:\n  " + "\n  ".join(bad)
                + "\nA normal graphic shows his words: put what he says at that moment in its \"data\" / \"vars\" / HTML (or the text card)."
+               + " A saved graphic keeps its design and gets this video's words: bin/kit graphics use <name> --job <job>, then change the words in the copy."
                + " A message graphic (iMessage, DM, notification) shows made-up, realistic texts from her, never his script lines."
                + " Then preview again.")
+    add_moves(tl, blocks_meta, a)
+    for x in tl["sfx"]:
+        x["dur_s"] = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                                           os.path.join(a, x["file"])], capture_output=True, text=True).stdout.strip() or 0.5)
     tl.setdefault('audio_processing', {}).update(voice_track(tl, os.path.join(a, "voice.wav")))
     idx = os.path.join(proj, "index.html")
     open(idx, "w").write(write_html(tl, blocks_meta))
@@ -628,7 +753,9 @@ def layout_errors(proj):
         k = (lambda m: float(m.group(1)) if m else 1.0)(re.search(r"scale\(([\d.]+)\)", st))
         box = [x, y, w * k, h * k]
         rb = [round(v) for v in box]
-        if show == "cutaway":
+        if show == "scene":   # a themed cut scene: the kit drew the page behind it and put it in the graphic's place
+            pass
+        elif show == "cutaway":
             if not (box[0] <= 1 and box[1] <= 1 and box[2] >= W - 1 and box[3] >= H - 1):
                 errs.append(f"layout: cutaway #{bid} at {rb} doesn't fill the frame, so it sits on his face; make it [0, 0, {W}, {H}] or an overlay beside his face")
         elif show == "overlay" or mode == "full":
@@ -640,7 +767,7 @@ def layout_errors(proj):
             errs.append(f"layout: block #{bid} at {rb} covers his face; keep it inside the top panel [0, 0, {W}, <= {lim:.0f}]")
         elif not gg.inside(box, [0, 0, W, lim]):
             errs.append(f"layout: block #{bid} at {rb} crosses the frame edge; keep it inside [0, 0, {W}, <= {lim:.0f}]")
-        if show != "cutaway" and (box[2] < gg.MIN_BOX_W_FRAC * W or box[3] < gg.MIN_BOX_H * H / 1920):
+        if show not in ("cutaway", "scene") and (box[2] < gg.MIN_BOX_W_FRAC * W or box[3] < gg.MIN_BOX_H * H / 1920):
             errs.append(f"layout: block #{bid} is {round(box[2])}x{round(box[3])} px, too small to read on a phone; make it at least "
                         f"{round(gg.MIN_BOX_W_FRAC * W)} px wide and {round(gg.MIN_BOX_H * H / 1920)} px tall")
         if k > 1.001:

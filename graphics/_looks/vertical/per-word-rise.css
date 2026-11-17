@@ -1,0 +1,2 @@
+/* On a vertical video: big stacked words instead of one small line. */
+.pwr-stage { font-size: var(--kit-word-fit, 12cqw) !important; line-height: 0.98; }

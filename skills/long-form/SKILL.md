@@ -5,7 +5,7 @@ description: "Edit a long-form 16:9 YouTube video from his raw camera footage (p
 
 # Long-form (16:9)
 
-Same pipeline and default look as a Short (skills/edit-short): real-world UI replicas, quality gate after every change, saved preferences on top. The frame is 16:9. Read skills/edit-short first; the rules below are what's different.
+Same pipeline as a Short (skills/edit-short): graphics from the HyperFrames library in this video's one theme (skills/graphics), a look at the stills after every change, saved preferences on top. The frame is 16:9. Read skills/edit-short first; the rules below are what's different.
 
 ## 1. Draft
 `bin/kit draft <clip> --long --name <job>`. The source can be 4K; the kit frames it to 1920x1080. The default look applies; saved preferences layer on top.
@@ -28,11 +28,11 @@ Long-form needs something to look at every 10-20 s besides his face. From his li
 - **Pictures** (a match screenshot, a text, a photo): an overlay card beside his head, never over his face:
   `{"picture": "library/pictures/<file>.png", "at": s, "dur": s, "x": 1480, "y": 430, "w": 640}` (x/y = card centre, px of the 1920x1080 frame).
 - **A block** for a list, a chat, a number or a title: `blocks` with a `box` on the side he isn't on, e.g. `[1260, 80, 560, 920]`.
-- A **sound effect** at most where a picture or block lands, quiet (`gain_db` -10). Matthew's styles are "the basics": no music, no stacked effects.
+- **Sound effects** are on long videos too, and the kit places them: b-roll and full-screen graphics swipe in and out with a whoosh; small cards beside him pop in quietly. Add another sound only where it fits, from `library/sfx/`, under his voice. No music unless he asks.
 - B-roll never freezes: `from` + `dur` must fit inside the clip (`bin/kit library list` shows clips; check the clip's length).
 
 ## 4. Preview, then wait
-`bin/kit preview <job>`, then his notes (skills/edit-short steps 4-5). Do not render until he says "render it", "render them", or "render 3 and 5". Graphics follow skills/graphics: a side or inset panel, or a full-screen cutaway with his face returning — never over his face. Preferences layer on top and must not restore the old canned look.
+`bin/kit preview <job>`, then his notes (skills/edit-short steps 4-5). Do not render until he says "render it", "render them", or "render 3 and 5". Graphics follow skills/graphics: a side or inset panel, or a full-screen cutaway with his face returning — never over his face. Preferences layer on top.
 
 When he does ask for a render: `bin/kit render <job>`. A long render takes about the video's length again (a 10-minute video renders in roughly 8-12 minutes, then QA). Tell him the ETA before you start it, and don't stop the session while it runs. Run it so it can take that long (a background or long-running command you check on), not with a short command timeout; if the command is cut off, `bin/kit render <job>` again starts it over.
 

@@ -1,0 +1,13 @@
+{
+  "about": "White page, black type, one strong red. Loud and simple. (HyperFrames preset bold-poster.)",
+  "bg": "#FFFFFF",
+  "surface": "#F5F2EF",
+  "fg": "#1C1410",
+  "muted": "#6F6660",
+  "border": "#DDD6CF",
+  "accent": "#D8000F",
+  "accent2": "#1C1410",
+  "over": "#FFFFFF",
+  "ink": "#1C1410",
+  "turn": 5
+}

@@ -994,8 +994,17 @@ def edl_inputs(a):
             print(f'edl.json render.dialogue not found ({stem}); running without the stem')
     if a.target_lufs is None:
         a.target_lufs = (ren.get('loudness') or {}).get('target_lufs')
-    a.fullscreen = [(g.get('t'), g.get('until')) for g in (plan.get('broll') or {}).get('graphics') or []
-                    if (g.get('kind') or g.get('what')) == 'cut_scene' and g.get('t') is not None and g.get('until') is not None]
+    # stretches where something else fills the screen instead of his face. This kit's plan lists b-roll clips and
+    # blocks ({at, dur}); the older shape was {"broll": {"graphics": [{kind: cut_scene, t, until}]}}. Reading a list as
+    # that older shape crashed the whole check on every video with b-roll.
+    br = plan.get('broll') or []
+    if isinstance(br, dict):
+        a.fullscreen = [(g.get('t'), g.get('until')) for g in br.get('graphics') or []
+                        if (g.get('kind') or g.get('what')) == 'cut_scene' and g.get('t') is not None and g.get('until') is not None]
+    else:
+        full = [b for b in br if isinstance(b, dict) and (b.get('layout') or 'full') == 'full']
+        full += [b for b in plan.get('blocks') or [] if isinstance(b, dict) and b.get('show') == 'cutaway']
+        a.fullscreen = [(float(b['at']), float(b['at']) + float(b.get('dur', 1.5))) for b in full if b.get('at') is not None]
     if not a.end_text and q.get('end_text'):
         a.end_text = q['end_text']
     if not a.expect_text and q.get('expect_text'):

@@ -5,7 +5,7 @@ You watch the whole edit live in HyperFrames Studio before anything renders, cha
 then it renders once and goes through the quality check.
 The default look shows the real things you're talking about (a real Google page, a real ChatGPT window) in a clean layout,
 with a quality check after every change. Say what to tweak (for example, "make my captions smaller") and it is saved
-as a preference on top of that default — it never goes back to the old canned pack.
+as a preference on top of that default — it sticks for every video after.
 
 ## Quick start
 1. In Terminal, once (the repo is private; accept Mitchell's GitHub invite first):
@@ -33,7 +33,7 @@ bin/kit style import ~/ColdApproach/matthew-edit-kit   # only if you used the ol
 ```
 
 ## Versions and updates
-- `bin/kit version` shows the version and exact commit. This release is **2.3.9**. Older releases: 2.0.0, 2.0.1, 2.0.2, 2.2.0, 2.2.1, 2.3.0, 2.3.1, 2.3.2, 2.3.3, 2.3.4, 2.3.5, 2.3.6, 2.3.7, 2.3.8. See `CHANGELOG.md`.
+- `bin/kit version` shows the version and exact commit. This release is **2.4.0**. Older releases: 2.0.0, 2.0.1, 2.0.2, 2.2.0, 2.2.1, 2.3.0, 2.3.1, 2.3.2, 2.3.3, 2.3.4, 2.3.5, 2.3.6, 2.3.7, 2.3.8, 2.3.9. See `CHANGELOG.md`.
 - Update the kit: say "update my kit" or "update-my-kit" (Codex runs `bin/kit update`, a `git pull` of this repo).
 - HyperFrames and the Python packages update on their own: once a day the kit looks for newer versions (same release
   line), tests them on a short clip against the current ones (same words heard, same frames, same audio, same QA
@@ -77,7 +77,7 @@ Replaces the Remotion-based Matthew Edit Kit (1.x), which still works on its own
 
 ### The default look (2.3.1)
 
-Every Short and YouTube video starts from real-world UI replicas in a clean layout. Say what to change and it is saved as a preference on top of that default — it never restores the old canned pack. Say "Matthew style" to get your old look (red captions like your old videos) on just that video. Previews open first, one Studio tab per video. Files land in `done/` only after "render them", "render 3 and 5", or "render it". Details: `CHANGELOG.md`.
+Every Short and YouTube video gets its graphics from the HyperFrames library, all in one colour theme per video (the theme changes from video to video). Give a reference video and the kit copies its colours and finds the closest ready-made pieces. Say what to change and it is saved as a preference. Say "Matthew style" to get your old look (red captions like your old videos) on just that video. Previews open first, one Studio tab per video. Files land in `done/` only after "render them", "render 3 and 5", or "render it". Details: `CHANGELOG.md`.
 
 ### Voice cleanup (2.2.1)
 

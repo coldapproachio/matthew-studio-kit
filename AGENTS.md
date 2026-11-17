@@ -4,6 +4,11 @@ This folder is the kit. Run every command from here as `bin/kit ...` (it uses th
 `.codex/rules/kit.rules` lets `bin/kit` run outside the sandbox, because previews and renders start HyperFrames' headless
 Chrome and a local Studio server. Always call it as `bin/kit`, so the rule applies.
 
+**His own rules: `my-styles/RULES.md`.** If that file exists, read it before any edit; where it differs from this file or a
+skill, it wins. When he gives you a standing rule for his videos ("always...", "never...", "from now on..."), write it
+there, with the date. Never write his rules into the kit's own files (`AGENTS.md`, `skills/`, `styles/`): an update
+replaces those files, and a changed one stops the update. `my-styles/` is his and is never touched by updates.
+
 ## Which instructions to follow (read the file before acting)
 | He asks to... | Read and follow |
 |---|---|

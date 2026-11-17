@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.4.1
+
+- His own standing rules live in `my-styles/RULES.md`, which Codex reads before every edit and which wins over the kit's instructions. Rules written into the kit's own files stopped updates from installing; they are never written there now.
+
 ## 2.4.0
 
 - **Any HyperFrames library piece can be used.** The kit no longer refuses pieces by name (titles, underlines, callouts, lower thirds, counters). Three other things that stopped library pieces are gone too: a piece's settings (such as "fade" or "highlight") were checked as if they were words on screen; any piece with "text" in its name was treated as a text message from a girl; and a graphic left in his style by an older video was refused.
